@@ -19,6 +19,8 @@ from tkinter import font
 # GRAD_TOP / GRAD_BOTTOM are the two ends of the gradient.
 # OK_BG / WARN_BG tint the plant-status card (always paired with an icon and
 # words, so color is never the only signal).
+# BORDER outlines the cards; CONTROL_BORDER is the stronger outline of
+# everything tappable (3:1 against what's around it, so controls stand out).
 THEMES = {
     "light": dict(
         BG="#F1F8EF", CARD="#FFFFFF", BORDER="#C5D9C8",
@@ -28,6 +30,7 @@ THEMES = {
         OK="#1B7541", WARN="#B3261E", WAIT="#8F5700",
         OK_BG="#E7F5EB", WARN_BG="#FCEBE9",
         ACCENT="#2A7549", ON_ACCENT="#FFFFFF",
+        CONTROL_BORDER="#778E7E",
     ),
     "dark": dict(
         BG="#12211A", CARD="#1B3026", BORDER="#2E4A3A",
@@ -37,6 +40,7 @@ THEMES = {
         OK="#5FD08A", WARN="#FF8A80", WAIT="#F2B84B",
         OK_BG="#17402C", WARN_BG="#431F1F",
         ACCENT="#4CAF73", ON_ACCENT="#0E1A13",
+        CONTROL_BORDER="#637B6C",
     ),
     "nature": dict(
         BG="#F4FAF2", CARD="#FFFFFF", BORDER="#9DBFA6",
@@ -45,6 +49,7 @@ THEMES = {
         OK="#0F5530", WARN="#8A1710", WAIT="#6B4000",
         OK_BG="#E8F5EC", WARN_BG="#FBE9E6",
         ACCENT="#14532F", ON_ACCENT="#FFFFFF",
+        CONTROL_BORDER="#4F6A58",
     ),
 }
 # Colors of text that sits directly on the photo in the Nature theme
@@ -52,7 +57,16 @@ NATURE_TEXT_COLORS = [THEMES["nature"][role] for role in
                       ("TEXT", "MUTED", "ACCENT", "OK", "WARN", "WAIT")]
 SIZES = {"Small": 0.85, "Medium": 1.0, "Large": 1.2}
 
-NUMBER_SIZE = 36   # the big temperature / humidity numbers
+# The type scale: every font in the app is one of these roles.
+#   role: (size in pixels at Medium, bold by default)
+TYPE_SCALE = {
+    "display": (48, True),    # the temperature and humidity numbers
+    "title": (28, True),      # "Green Gauge", the status headline, plant name
+    "heading": (20, False),   # units next to the numbers, browse-row name
+    "body": (16, False),      # answers, details, notes, buttons, tabs, entry
+    "caption": (14, False),   # card and fact labels, hint, date line, footer
+}
+MIN_FONT_PX = 12
 
 # Current settings (changed from the Settings menu)
 _theme = "light"
@@ -103,36 +117,41 @@ def repaint_all():
 FONTS = {}
 
 
-def px(size, scale=1.0):
-    """Font size in PIXELS (negative = pixels in Tk).
+def px(pixels, scale=1.0):
+    """A font size for Tk (negative = pixels).
 
     The window is a fixed 800x480 pixels, so fonts are sized in pixels too.
     Point sizes would change with each screen's DPI setting and make the
-    layout fit on one computer but overflow on another. `size` is the
-    familiar point size at 96 DPI; 4/3 converts it to pixels."""
-    return -max(9, round(size * 4 / 3 * scale))
+    layout fit on one computer but overflow on another."""
+    return -max(MIN_FONT_PX, round(pixels * scale))
 
 
-def get_font(size, bold=False):
-    key = (size, bold)
+def get_font(role, bold=None):
+    """The shared font for a role in TYPE_SCALE. bold=None: the role's
+    usual weight."""
+    if bold is None:
+        bold = TYPE_SCALE[role][1]
+    key = (role, bold)
     if key not in FONTS:
         FONTS[key] = font.Font(
-            family="DejaVu Sans", size=px(size, _scale(size)),
+            family="DejaVu Sans", size=_size_of(role),
             weight="bold" if bold else "normal"
         )
     return FONTS[key]
 
 
-def _scale(size):
+def _size_of(role):
     scale = SIZES[_size]
     # The big reading numbers never grow past their normal size, which
     # keeps the reading cards compact at every text size.
-    return min(scale, 1.0) if size == NUMBER_SIZE else scale
+    if role == "display":
+        scale = min(scale, 1.0)
+    return px(TYPE_SCALE[role][0], scale)
 
 
 def apply_scale():
-    for (size, _bold), f in FONTS.items():
-        f.configure(size=px(size, _scale(size)))
+    for (role, _bold), f in FONTS.items():
+        f.configure(size=_size_of(role))
 
 
 def make_gradient(width, height, top, bottom):

@@ -26,7 +26,7 @@ class MicButton:
         canvas, c = self.canvas, MIC_SIZE / 2
         canvas.delete("all")
         canvas.create_rectangle(0, 0, MIC_SIZE - 1, MIC_SIZE - 1,
-                                outline=color("BORDER"))
+                                outline=color("CONTROL_BORDER"))
         if mode == "listening":
             for k in range(3):   # three rings expanding outward and fading
                 p = (frame / 16 + k / 3) % 1

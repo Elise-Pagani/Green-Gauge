@@ -1,46 +1,71 @@
-# Greenhouse Assistant
+# Green Gauge
 
-An offline Raspberry Pi greenhouse assistant (HCI class project), written in Python + Tkinter.
-It reads a DHT22 temperature/humidity sensor, compares the readings with a local plant
-database, warns when conditions aren't ideal for the selected plant, and answers questions
-through a local LLM (Ollama). Goal: work as offline as possible.
+**Climate Monitor** with **Sprout**, the plant assistant. An offline Raspberry Pi greenhouse
+assistant (HCI class project), written in Python + Tkinter. It reads a DHT22
+temperature/humidity sensor, compares the readings with a local plant database, warns when
+conditions aren't ideal for your plant, and answers questions through a local LLM (Ollama).
+Goal: work as offline as possible.
 
 Run with `python3 gui.py`. Esc quits.
 
 ## Key features
 
-- **Monitor page**: live temperature and humidity cards, plant picker, and a status card
-  (ideal = green with a check mark; not ideal = red with a warning and the reasons).
-  Status always uses an icon and words, never color alone.
-- **Plants page**: browse plants with the `<` `>` buttons. Shows a photo, ideal temperature
-  and humidity, watering, soil, soil pH and a care note. The selected plant is shared with the
-  Monitor page.
-- **Assistant page**: type a question (or say "I'm planting basil" to select a plant) and the
-  local LLM answers in two short sentences, using the plant database as its reference.
+- **Monitor tab**: live temperature and humidity cards and a status card for your plant
+  (ideal = green with a check mark; not ideal = red with a warning and the reasons, e.g.
+  "Too hot (33.0 °C, ideal 18–27 °C)"). Status always uses an icon and words, never color
+  alone. `Change plant ›` (or `Choose a plant ›`) opens the Plants tab. When a warning is on,
+  the Monitor tab button shows **⚠ Monitor**, so you see it from the other tabs too.
+- **Plants tab**: browse plants with the `<` `>` buttons. Shows a photo, ideal temperature
+  and humidity, watering, soil, soil pH and a care note. Browsing never changes your plant;
+  **Set as my plant** does (it then reads **✔ Your plant**).
+- **Assistant tab**: type a question and Sprout answers in two short sentences, using the plant
+  database as its reference. It remembers your last 2 questions, so follow-ups like "And what
+  temperature?" work; **Clear** forgets them (so does changing your plant). Saying "I'm
+  growing basil" asks **Make Basil your plant? Yes / No**. Sprout never changes your plant on
+  its own.
 - **Mock voice input**: tap the mic for a "listening" animation, then "thinking", then the
   answer. It is a Wizard-of-Oz simulation, since the Pi has no microphone: it "hears" the next
-  phrase in `MOCK_PHRASES` (in `gui.py`) and runs it like typed text. The typed box is the real input.
-- **Themes and text sizes**: Light, Dark and Nature (blurred photo background kept readable);
-  Small, Medium, Large text. Layout is fixed at 800x480. Settings are not saved between runs.
+  phrase in `MOCK_PHRASES` (in `assistant.py`) and runs it like typed text. The typed box is
+  the real input. Tapping the mic again cancels.
+- **Settings ▾** (top right): Theme (Light, Dark, Nature with a blurred photo background kept
+  readable) and Text size (Small, Medium, Large). The layout is fixed at 800×480. Your choice
+  is saved in `settings.json` next to `gui.py` (not in the repo) and restored at the next start.
+- **Readable everywhere**: one five-step type scale (display, title, heading, body, caption), text
+  contrast of at least 4.5:1 and control outlines of at least 3:1 in every theme, and touch
+  targets at least 44 px tall.
 - **Sensor fallback**: on the Pi the app uses the real DHT22; on any other machine it uses a
   simulated sensor (random readings that fail on purpose about 1 in 4 times: the temperature
-  and the humidity each fail 12% of the time, independently).
+  and the humidity each fail 12% of the time, independently). The footer says
+  "● Simulated sensor" then.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `gui.py` | The app: themes, pages, settings, mock mic, sensor loop |
-| `sensor.py` | Real DHT22 on the Pi (GPIO4), simulated sensor elsewhere |
-| `plant_db.py` | SQLite database. `SEED_PLANTS` is the master list: edit it and restart |
-| `commands.py` | Decides whether text is a question (LLM) or a plant selection |
+| `gui.py` | The app window: header, tabs, Settings menu, backdrop, timers, sensor loop |
+| `monitor_page.py`, `plants_page.py`, `assistant_page.py` | The three tabs |
+| `assistant.py` | Sprout's logic (no Tk): suggestions, history, mock voice (`MOCK_PHRASES`) |
+| `commands.py` | Decides whether text is a plant selection or a question for Sprout |
 | `llm.py` | Talks to Ollama (`MODEL` is set here) |
-| `photos.py` | Loads plant photos from `photos/` |
-| `background.py`, `zones.py` | Nature backdrop and text drawn directly on it |
+| `plant_db.py` | SQLite database. `SEED_PLANTS` is the master list: edit it and restart |
+| `units.py` | How readings, ranges and warnings are written (`24.3 °C`, `18–27 °C`, `pH 6.0–6.5`) |
+| `theme.py` | Colors of the three themes, the type scale and fonts |
+| `widgets.py`, `zones.py` | Shared widget helpers; text drawn directly on the backdrop |
+| `mic.py` | The drawn mic button and its animation |
+| `settings.py` | Loads and saves `settings.json` |
+| `sensor.py` | Real DHT22 on the Pi (GPIO4), simulated sensor elsewhere |
+| `photos.py`, `background.py` | Plant photos; the Nature backdrop |
+| `tests/` | Unit tests (`unittest`, no display or Ollama needed) |
 | `photos/` | One square picture per plant, named after the plant: `basil.jpg`, `bell_pepper.jpg`. The current ones are about 430 px square JPEGs, shown at 170 px. Any of `.png .gif .jpg .jpeg .webp` works |
 | `backgrounds/` | Optional photo for the Nature theme |
 
-`plants.db` is generated automatically and not stored in the repo.
+`plants.db` and `settings.json` are generated automatically and not stored in the repo.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## Setup on a new machine
 
@@ -67,8 +92,8 @@ ollama pull llama3.2:3b
 4. **Sensor libraries**: `pip install -r requirements-pi.txt` (the Adafruit DHT library; this
    file hasn't been tested on a real Pi). The professor's code also uses `board`.
 5. **Confirm the real sensor is used**: `python3 -c "import sensor; print(sensor.ON_PI)"`
-   must print `True`. If it prints `False` the app silently shows fake readings, and the
-   status line still says "SENSOR CONNECTED".
+   must print `True`. The footer then says "● Sensor connected". If it says
+   "● Simulated sensor", the readings are fake.
 6. **Wiring**: DHT22 data pin on GPIO4 (physical pin 7). A different pin means editing
    `adafruit_dht.DHT22(board.D4, ...)` in `sensor.py`.
 7. **Ollama**: install it on the Pi (`curl -fsSL https://ollama.com/install.sh | sh`), then
@@ -77,10 +102,13 @@ ollama pull llama3.2:3b
    while the model loads.
 8. **Run**: `python3 gui.py` (it goes fullscreen on the Pi). Check:
    - readings change and match the real room (breathe on the sensor to test)
-   - the status card follows the selected plant
-   - touchscreen: tabs, `<` `>` buttons, mic and the ASK box are easy to tap (not yet verified)
+   - the status card follows your plant
+   - touchscreen: tabs, Settings, `<` `>` buttons, mic and the Ask box are easy to tap
+     (all are at least 44 px tall; not yet tried with a finger)
    - an on-screen keyboard is available if there is no physical one
-   - all three themes and text sizes fit the screen
+   - all three themes and text sizes fit the screen. At Large, check that the date line
+     doesn't touch the Settings button on a long date such as "Wednesday, September 30"
+     (checked with a stand-in font, not DejaVu Sans)
 
 ## Photo sources
 

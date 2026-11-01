@@ -9,6 +9,7 @@ import socket
 import urllib.error
 import urllib.request
 
+import units
 from plant_db import list_plants, get_plant
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -22,8 +23,7 @@ def build_system_prompt(active_plant=None, reading=None):
     for name in list_plants():
         p = get_plant(name)
         lines.append(
-            f"- {p['name']}: {p['min_temp']:.0f}-{p['max_temp']:.0f} °C, "
-            f"{p['min_hum']:.0f}-{p['max_hum']:.0f}% RH. {p['notes'] or ''}".rstrip()
+            f"- {p['name']}: {units.ideal_ranges(p)}. {p['notes'] or ''}".rstrip()
         )
     table = "\n".join(lines)
 
@@ -40,8 +40,8 @@ def build_system_prompt(active_plant=None, reading=None):
         prompt += f"\nThe user is currently growing: {active_plant}."
     if reading:
         prompt += (
-            f"\nCurrent greenhouse reading: {reading[0]:.1f} °C, "
-            f"{reading[1]:.1f}% RH."
+            f"\nCurrent greenhouse reading: {units.temperature(reading[0])}, "
+            f"{units.humidity(reading[1])}."
         )
     return prompt
 

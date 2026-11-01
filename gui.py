@@ -19,12 +19,12 @@ from plants_page import PlantsPage
 from sensor import get_sensor, ON_PI
 from settings import load_settings, save_settings
 from theme import THEMES, SIZES, NATURE_TEXT_COLORS, paint
-from widgets import make_line, say
+from widgets import BUTTON_PADY, make_line, say
 from zones import TextZone, RowZone
 
 PAGE_TITLES = {"monitor": "Monitor", "plants": "Plants",
-               "assistant": "Sprout"}
-TAB_WIDTH = 10   # characters: room for "⚠ Monitor", so the badge never shifts the tabs
+               "assistant": "Assistant"}
+TAB_PADX = 16   # room on each side of the widest tab text
 
 FRAME_MS = 50          # mic animation frame
 ANSWER_POLL_MS = 200   # how often to look for a finished LLM answer
@@ -121,29 +121,46 @@ class App:
         self.header = TextZone(self.root, pad_top=10, pad_bottom=2)
         paint(self.header, bg="BG")
         self.header.grid(row=0, column=0, columnspan=2, sticky="ew")
-        make_line(self.header, "Green Gauge", 24, "ACCENT", True)
-        self.date_line = make_line(self.header, "", 11, "MUTED")
+        make_line(self.header, "Green Gauge", "title", "ACCENT")
+        # "Climate Monitor · date · time" (one line, so every page has room)
+        self.date_line = make_line(self.header, "Climate Monitor", "caption", "MUTED")
 
     def _build_tabs(self):
         """Page tabs (always visible, easy to tap)."""
         self.nav = RowZone(self.root, pad_top=2, pad_bottom=2)
         paint(self.nav, bg="BG")
         self.nav.grid(row=5, column=0, columnspan=2, sticky="ew")
+        # A Label showing an image is sized in pixels, so a blank image lets
+        # every tab have the same fixed size (see size_tabs): the bold
+        # current tab and the ⚠ badge never shift the row
+        self.tab_spacer = tk.PhotoImage(width=1, height=1)
         self.tabs = {}
         for page_name, page_title in PAGE_TITLES.items():
-            tab = tk.Label(self.nav, text=page_title, font=theme.get_font(12, True),
-                           width=TAB_WIDTH, padx=16, pady=7, highlightthickness=1,
+            tab = tk.Label(self.nav, text=page_title, image=self.tab_spacer,
+                           compound="center", font=theme.get_font("body"),
+                           bd=0, padx=0, pady=0, highlightthickness=1,
                            cursor="hand2")
             tab.bind("<Button-1>", lambda _event, name=page_name: self.show_page(name))
             self.tabs[page_name] = tab
             self.nav.add_widget(tab, padx=(6, 6))
+        self.size_tabs()
+
+    def size_tabs(self):
+        """Every tab fits the widest text it can show ("⚠ Monitor" in bold)
+        and is a comfortable touch target (call again after a text-size
+        change)."""
+        bold = theme.get_font("body", True)
+        width = max(bold.measure(f"⚠ {title}") for title in PAGE_TITLES.values())
+        height = bold.metrics("linespace") + 2 * BUTTON_PADY
+        for tab in self.tabs.values():
+            tab.config(width=width + 2 * TAB_PADX, height=height)
 
     def _build_footer(self):
         """The sensor status line."""
         self.footer = TextZone(self.root, pad_top=2, pad_bottom=6)
         paint(self.footer, bg="BG")
         self.footer.grid(row=6, column=0, columnspan=2, sticky="ew")
-        self.status = make_line(self.footer, "Connecting to sensor...", 10, "OK")
+        self.status = make_line(self.footer, "Connecting to sensor…", "caption", "OK")
 
     # ------------------------------------------------------------ pages
     def nudge_zones(self):
@@ -180,13 +197,15 @@ class App:
         for tab_name, tab in self.tabs.items():
             title = PAGE_TITLES[tab_name]
             badge = warn and tab_name == "monitor"
-            tab.config(text=f"⚠ {title}" if badge else title)
-            if tab_name == self.page:
+            current = tab_name == self.page
+            tab.config(text=f"⚠ {title}" if badge else title,
+                       font=theme.get_font("body", current))
+            if current:
                 paint(tab, bg="ACCENT", fg="ON_ACCENT", highlightbackground="ACCENT")
             elif badge:
                 paint(tab, bg="WARN_BG", fg="WARN", highlightbackground="WARN")
             else:
-                paint(tab, bg="CARD", fg="TEXT", highlightbackground="BORDER")
+                paint(tab, bg="CARD", fg="TEXT", highlightbackground="CONTROL_BORDER")
 
     def set_active_plant(self, name):
         """Make a plant the user's plant, everywhere. Only the Plants page
@@ -254,20 +273,22 @@ class App:
         self.theme_var = tk.StringVar(value=theme.current_theme())
         self.size_var = tk.StringVar(value=theme.current_size())
 
-        button = tk.Menubutton(self.root, text="Settings ▾",
-                               font=theme.get_font(10, True), relief="flat", bd=0,
-                               padx=12, pady=6, highlightthickness=1)
-        paint(button, bg="CARD", fg="TEXT",
-              activebackground="ACCENT", activeforeground="ON_ACCENT",
-              highlightbackground="BORDER")
+        # A Label that opens the menu, like the other buttons (a Menubutton
+        # ignores colors and padding on the Mac, so it was too small to tap)
+        button = tk.Label(self.root, text="Settings ▾", font=theme.get_font("body"),
+                          bd=0, padx=12, pady=BUTTON_PADY, highlightthickness=1,
+                          cursor="hand2")
+        paint(button, bg="CARD", fg="TEXT", highlightbackground="CONTROL_BORDER")
+        self.settings_button = button
 
-        menu = tk.Menu(button, tearoff=0, font=theme.get_font(11))
+        menu = tk.Menu(self.root, tearoff=0, font=theme.get_font("body"))
         paint(menu, bg="CARD", fg="TEXT",
               activebackground="ACCENT", activeforeground="ON_ACCENT",
               disabledforeground="MUTED", selectcolor="ACCENT")
-        button["menu"] = menu
+        button.bind("<Button-1>", lambda _event: menu.tk_popup(
+            button.winfo_rootx(), button.winfo_rooty() + button.winfo_height()))
 
-        menu.add_command(label="THEME", state="disabled")
+        menu.add_command(label="Theme", state="disabled")
         for name in THEMES:
             label = name.title()
             if name == "nature" and not background.pillow_available():
@@ -278,7 +299,7 @@ class App:
             menu.add_radiobutton(label=label, variable=self.theme_var,
                                  value=name, command=self.on_theme_change)
         menu.add_separator()
-        menu.add_command(label="TEXT SIZE", state="disabled")
+        menu.add_command(label="Text size", state="disabled")
         for size_name in SIZES:
             menu.add_radiobutton(label=size_name, variable=self.size_var,
                                  value=size_name, command=self.on_size_change)
@@ -303,6 +324,9 @@ class App:
     def on_size_change(self):
         theme.set_size(self.size_var.get())
         theme.apply_scale()
+        self.size_tabs()
+        self.monitor.update_wrap()
+        self.plants.update_wrap()
         self.assistant_page.update_wrap()
         self.root.update_idletasks()
         for zone in self.zones:
@@ -359,7 +383,8 @@ class App:
 
     def update_datetime(self):
         now = datetime.now()
-        text = f"{now:%A, %B} {now.day}  ·  {now.strftime('%I:%M %p').lstrip('0')}"
+        clock = now.strftime("%I:%M %p").lstrip("0")
+        text = f"Climate Monitor  ·  {now:%A, %B} {now.day}  ·  {clock}"
         line = self.date_line
         if text != line.zone.itemcget(line.item, "text"):
             line.config(text=text)
@@ -374,7 +399,7 @@ class App:
                 self.monitor.show_reading(temperature, humidity)
                 if ON_PI:
                     say(self.status,
-                        f"● SENSOR CONNECTED  ·  last check {clock_text()}", "OK")
+                        f"● Sensor connected  ·  last check {clock_text()}", "OK")
                 else:   # don't claim a real sensor when the readings are fake
                     say(self.status,
                         f"● Simulated sensor  ·  last check {clock_text()}", "WAIT")
@@ -383,7 +408,7 @@ class App:
 
         except RuntimeError:
             # DHT22 readings can occasionally fail.
-            waiting = ("Waiting for sensor reading..." if ON_PI
+            waiting = ("Waiting for sensor reading…" if ON_PI
                        else "Simulated sensor  ·  waiting for reading…")
             say(self.status, f"{waiting}  ·  last check {clock_text()}", "WAIT")
         except Exception:

@@ -4,13 +4,11 @@ import tkinter as tk
 
 from mic import MicButton
 from theme import get_font, paint
-from widgets import make_button, make_line, make_row_text, say
+from widgets import make_button, make_line, make_row_text, say, text_width
 from zones import TextZone, RowZone
 
-ANSWER_SIZE = 12        # the question and answer text
 WRAP_CHARACTERS = 60    # answers wrap at about this many characters
 SIDE_MARGIN = 70        # ...but never closer than this to the window's sides
-SAMPLE = "Basil likes 18–29 °C and 40–60% humidity; keep it out of the cold."
 
 
 class AssistantPage:
@@ -38,10 +36,10 @@ class AssistantPage:
         put(self.zone, show=False, row=2, column=0, columnspan=2, sticky="nsew")
         self.hint = make_line(
             self.zone, "Tap the mic or ask Sprout, e.g. \"I'm planting basil\"",
-            10, "MUTED", wraplength=700)
-        self.question_label = make_line(self.zone, "", ANSWER_SIZE, "MUTED",
+            "caption", "MUTED", wraplength=700)
+        self.question_label = make_line(self.zone, "", "body", "MUTED",
                                         gap=10, align="left")
-        self.reply_label = make_line(self.zone, "", ANSWER_SIZE, "TEXT", gap=6,
+        self.reply_label = make_line(self.zone, "", "body", "TEXT", gap=6,
                                      align="left")
 
     def _build_suggestion_row(self, root, put, on_yes, on_no, on_clear):
@@ -50,14 +48,14 @@ class AssistantPage:
         self.row = RowZone(root, pad_top=4, pad_bottom=2)
         paint(self.row, bg="BG")
         self.row_grid = dict(row=3, column=0, columnspan=2, sticky="ew")
-        self.row_text = make_row_text(self.row, "", ANSWER_SIZE, "TEXT",
+        self.row_text = make_row_text(self.row, "", "body", "TEXT",
                                       padx=(0, 12))
         self.yes = make_button(self.row, "Yes", on_yes, primary=True)
         self.row.add_widget(self.yes, padx=(0, 8))
         self.no = make_button(self.row, "No", on_no)
         self.row.add_widget(self.no)
         self.memory_hint = make_row_text(
-            self.row, "Sprout remembers your last 2 questions", 10, "MUTED",
+            self.row, "Sprout remembers your last 2 questions", "caption", "MUTED",
             padx=(0, 12))
         self.clear = make_button(self.row, "Clear", on_clear)
         self.row.add_widget(self.clear)
@@ -66,11 +64,11 @@ class AssistantPage:
         self.ask_row = RowZone(root, pad_top=4, pad_bottom=2)
         paint(self.ask_row, bg="BG")
         put(self.ask_row, show=False, row=4, column=0, columnspan=2, sticky="ew")
-        make_row_text(self.ask_row, "Ask Sprout:", 11, "MUTED", True, padx=(0, 10))
-        self.entry = tk.Entry(self.ask_row, font=get_font(12), width=34,
+        make_row_text(self.ask_row, "Ask Sprout:", "body", "MUTED", padx=(0, 10))
+        self.entry = tk.Entry(self.ask_row, font=get_font("body"), width=34,
                               relief="flat", highlightthickness=1)
         paint(self.entry, bg="CARD", fg="TEXT", insertbackground="TEXT",
-              highlightbackground="BORDER", highlightcolor="ACCENT")
+              highlightbackground="CONTROL_BORDER", highlightcolor="ACCENT")
         self.ask_row.add_widget(self.entry, extra_height=10)
         self.entry.bind("<Return>", on_submit)
 
@@ -82,9 +80,7 @@ class AssistantPage:
     def update_wrap(self):
         """Wrap the question and answer at about WRAP_CHARACTERS characters
         of the current answer font (call again after a text-size change)."""
-        font = get_font(ANSWER_SIZE)
-        width = font.measure(SAMPLE) / len(SAMPLE) * WRAP_CHARACTERS
-        width = int(min(width, self.window_width - SIDE_MARGIN))
+        width = min(text_width(WRAP_CHARACTERS), self.window_width - SIDE_MARGIN)
         for label in (self.question_label, self.reply_label):
             label.config(wraplength=width)
 
