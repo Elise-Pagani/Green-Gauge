@@ -71,8 +71,18 @@ class Zone(tk.Canvas):
             self._align_photo()
 
     def _align_photo(self):
-        # Shift the full-window photo so this zone shows its own piece of it
-        self.coords(self._photo_item, -self.winfo_x(), -self.winfo_y())
+        # Shift the full-window photo so this zone shows its own piece of it.
+        # Position is measured from the window's corner, so it stays right
+        # even if the zone sits inside another widget.
+        window = self.winfo_toplevel()
+        x = self.winfo_rootx() - window.winfo_rootx()
+        y = self.winfo_rooty() - window.winfo_rooty()
+        self.coords(self._photo_item, -x, -y)
+
+    def refresh(self):
+        """Re-align and re-lay out (use after the zone is shown again)."""
+        self._align_photo()
+        self.relayout()
 
     def _on_configure(self, _event):
         self._align_photo()

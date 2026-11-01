@@ -69,8 +69,20 @@ def ask(question, selected_plant=None, reading=None):
         return data["message"]["content"].strip() or "I didn't get an answer. Try rephrasing."
     except (socket.timeout, TimeoutError):
         return "That took too long. The model may still be loading; try again."
+    except urllib.error.HTTPError as error:
+        # Ollama IS running but refused the request. HTTPError is a kind of
+        # URLError, so it has to be checked first or it would be reported
+        # as "can't reach Ollama".
+        try:
+            detail = json.load(error).get("error", "")
+        except (ValueError, AttributeError):
+            detail = ""
+        if error.code == 404 or "not found" in detail.lower():
+            return (f"Ollama is running, but the model {MODEL} isn't downloaded "
+                    f"yet. In a terminal, run: ollama pull {MODEL}")
+        return f"Ollama returned an error ({error.code}). {detail}".strip()
     except urllib.error.URLError:
-        return "Can't reach Ollama. Is it running? (try: ollama serve)"
+        return "Can't reach Ollama. Is it running? (open the Ollama app, or run: ollama serve)"
     except (KeyError, ValueError):
         return "Got an unexpected reply from Ollama."
 
