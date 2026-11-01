@@ -83,8 +83,6 @@ ollama pull llama3.2:3b
 
 ## Photo sources
 
-## Photo sources
-
 All plant photos are from [Pixabay](https://pixabay.com) and used under the
 [Pixabay Content License](https://pixabay.com/service/license-summary/), which allows free use
 and modification.
