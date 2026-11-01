@@ -4,3 +4,4 @@ plants.db
 background_preview.png
 .DS_Store
 .venv/
+settings.json

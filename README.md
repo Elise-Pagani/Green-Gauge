@@ -23,7 +23,8 @@ Run with `python3 gui.py`. Esc quits.
 - **Themes and text sizes**: Light, Dark and Nature (blurred photo background kept readable);
   Small, Medium, Large text. Layout is fixed at 800x480. Settings are not saved between runs.
 - **Sensor fallback**: on the Pi the app uses the real DHT22; on any other machine it uses a
-  simulated sensor (random readings that fail about 1 in 8 reads, on purpose).
+  simulated sensor (random readings that fail on purpose about 1 in 4 times: the temperature
+  and the humidity each fail 12% of the time, independently).
 
 ## Files
 
@@ -36,7 +37,7 @@ Run with `python3 gui.py`. Esc quits.
 | `llm.py` | Talks to Ollama (`MODEL` is set here) |
 | `photos.py` | Loads plant photos from `photos/` |
 | `background.py`, `zones.py` | Nature backdrop and text drawn directly on it |
-| `photos/` | One square picture per plant, e.g. `basil.png`, `bell_pepper.png` (340x340 px) |
+| `photos/` | One square picture per plant, named after the plant: `basil.jpg`, `bell_pepper.jpg`. The current ones are about 430 px square JPEGs, shown at 170 px. Any of `.png .gif .jpg .jpeg .webp` works |
 | `backgrounds/` | Optional photo for the Nature theme |
 
 `plants.db` is generated automatically and not stored in the repo.
@@ -99,3 +100,10 @@ and modification.
 | Strawberry | [Kathas_Fotos](https://pixabay.com/users/kathas_fotos-11174123/) | [https://pixabay.com/photos/...](https://pixabay.com/photos/strawberries-strawberry-patch-7323943/) |
 | Orchid | [trungkhang](https://pixabay.com/users/trungkhang-29069499/) | [https://pixabay.com/photos/...](https://pixabay.com/photos/orchid-flowers-plant-phalaenopsis-7511812/) |
 | Cactus | [ignartonosbg](https://pixabay.com/users/ignartonosbg-21428489/) | [https://pixabay.com/photos/...](https://pixabay.com/photos/cactus-flora-flower-plant-nature-7856967/) |
+
+## Background photo
+
+The Nature theme's background (`backgrounds/pexels-gianluca-buonaiuto-4849527-29731003.jpg`) is
+"Sunlit Green Leaves in Forest Canopy", photo by Gianluca Buonaiuto on Pexels:
+<https://www.pexels.com/photo/29731003/>, used under the
+[Pexels License](https://www.pexels.com/license/).

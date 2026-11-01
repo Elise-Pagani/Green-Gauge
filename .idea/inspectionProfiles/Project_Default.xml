@@ -1,0 +1,28 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="aiohttp" />
+          <option value="aiosignal" />
+          <option value="attrs" />
+          <option value="certifi" />
+          <option value="cffi" />
+          <option value="discord" />
+          <option value="discord.py" />
+          <option value="Django" />
+          <option value="djangorestframework" />
+          <option value="frozenlist" />
+          <option value="idna" />
+          <option value="multidict" />
+          <option value="opuslib" />
+          <option value="pycparser" />
+          <option value="PyNaCl" />
+          <option value="python-dotenv" />
+          <option value="yarl" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
