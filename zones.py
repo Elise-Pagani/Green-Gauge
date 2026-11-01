@@ -17,12 +17,14 @@ class CanvasText:
     app uses (text=, fg=, wraplength=, justify=), so it can be used the
     same way as a Label."""
 
-    def __init__(self, zone, text, font, fill, anchor, wraplength=0):
+    def __init__(self, zone, text, font, fill, anchor, wraplength=0,
+                 justify="center"):
         self.zone = zone
         self.font = font
+        self.wraplength = wraplength
         self.item = zone.create_text(
             0, 0, text=text, font=font, fill=fill,
-            anchor=anchor, width=wraplength, justify="center",
+            anchor=anchor, width=wraplength, justify=justify,
         )
 
     def config(self, **options):
@@ -33,7 +35,8 @@ class CanvasText:
         if "fg" in options:
             self.zone.itemconfigure(self.item, fill=options["fg"])
         if "wraplength" in options:
-            self.zone.itemconfigure(self.item, width=options["wraplength"])
+            self.wraplength = options["wraplength"]
+            self.zone.itemconfigure(self.item, width=self.wraplength)
             relayout = True
         if "justify" in options:
             self.zone.itemconfigure(self.item, justify=options["justify"])
@@ -110,28 +113,44 @@ class Zone(tk.Canvas):
 
 
 class TextZone(Zone):
-    """Lines of centered text stacked top to bottom."""
+    """Lines of text stacked top to bottom: centered, or left-aligned in a
+    column of their wrap width that is itself centered."""
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self._lines = []
 
-    def add_line(self, text, font, fill, gap=0, wraplength=0):
-        line = CanvasText(self, text, font, fill, anchor="n",
-                          wraplength=wraplength)
-        self._lines.append((line, gap))
+    def add_line(self, text, font, fill, gap=0, wraplength=0, align="center"):
+        """align="left" needs a wraplength: it sets the column's width."""
+        if align == "left":
+            line = CanvasText(self, text, font, fill, anchor="nw",
+                              wraplength=wraplength, justify="left")
+        else:
+            line = CanvasText(self, text, font, fill, anchor="n",
+                              wraplength=wraplength)
+        self._lines.append((line, gap, align))
         return line
 
     def relayout(self):
-        center = self.winfo_width() / 2
+        width = self.winfo_width()
         y = self.pad_top
-        for line, gap in self._lines:
+        for line, gap, align in self._lines:
             y += gap
-            self.coords(line.item, center, y)
+            if align == "left":
+                x = max(0, (width - line.wraplength) / 2)
+            else:
+                x = width / 2
+            self.coords(line.item, x, y)
             box = self.bbox(line.item)
             measured = (box[3] - box[1]) if box else 0
             y += max(measured, line.min_height())
         self._set_height(y + self.pad_bottom)
+
+
+def _item(entry):
+    """The canvas item of a RowZone part."""
+    kind, part = entry[0], entry[1]
+    return part.item if kind == "text" else part
 
 
 class RowZone(Zone):
@@ -140,6 +159,7 @@ class RowZone(Zone):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
         self._parts = []
+        self._hidden = set()   # canvas items of parts that are hidden
 
     def add_text(self, text, font, fill, padx=(0, 0)):
         text_part = CanvasText(self, text, font, fill, anchor="w")
@@ -150,9 +170,28 @@ class RowZone(Zone):
         item = self.create_window(0, 0, window=widget, anchor="w")
         self._parts.append(("window", item, widget, padx, extra_height))
 
+    def show_part(self, part, visible=True):
+        """Show or hide one part (a text from add_text, or a widget from
+        add_widget). Hidden parts take no room in the row."""
+        item = next(_item(entry) for entry in self._parts
+                    if part in (entry[1], entry[2]))
+        if visible == (item not in self._hidden):
+            return
+        if visible:
+            self._hidden.discard(item)
+        else:
+            self._hidden.add(item)
+        self.itemconfigure(item, state="normal" if visible else "hidden")
+        self.schedule_relayout()
+
+    def _shown_parts(self):
+        return [entry for entry in self._parts
+                if _item(entry) not in self._hidden]
+
     def relayout(self):
+        parts = self._shown_parts()
         sizes = []
-        for kind, part, widget, _padx, extra in self._parts:
+        for kind, part, widget, _padx, extra in parts:
             if kind == "text":
                 box = self.bbox(part.item)
                 width = (box[2] - box[0]) if box else 0
@@ -163,13 +202,13 @@ class RowZone(Zone):
             sizes.append((width, height))
 
         total_width = sum(w + p[3][0] + p[3][1]
-                          for (w, _h), p in zip(sizes, self._parts))
+                          for (w, _h), p in zip(sizes, parts))
         row_height = max((h for _w, h in sizes), default=0)
 
         x = max(0, (self.winfo_width() - total_width) / 2)
         y = self.pad_top + row_height / 2
         for (width, height), (kind, part, _widget, padx, _extra) in zip(
-                sizes, self._parts):
+                sizes, parts):
             x += padx[0]
             if kind == "text":
                 self.coords(part.item, x, y)

@@ -1,10 +1,14 @@
-"""Plants page: one plant's full guide, browsed with the < > arrows."""
+"""Plants page: one plant's full guide, browsed with the < > arrows.
+
+Browsing only changes the plant being VIEWED here. The user's plant (the
+one the Monitor page checks) changes only with the "Set as my plant" button.
+"""
 import tkinter as tk
 
 from photos import load_photo
 from plant_db import list_plants, get_plant
 from theme import color, get_font, paint
-from widgets import make_label
+from widgets import make_button, make_label
 from zones import RowZone
 
 PHOTO_BOX = 170
@@ -19,11 +23,12 @@ def fmt_range(low, high, unit="", digits=0):
 
 
 class PlantsPage:
-    def __init__(self, root, put, selected_name, select_plant):
-        """selected_name(): the selected plant's name or None.
-        select_plant(name): makes a plant the selected one."""
-        self.selected_name = selected_name
-        self.select_plant = select_plant
+    def __init__(self, root, put, active_name, set_active):
+        """active_name(): the user's plant's name or None.
+        set_active(name): makes a plant the user's plant."""
+        self.active_name = active_name
+        self.set_active = set_active
+        self.viewed_plant = None   # the plant shown here (None: none yet)
         self._build_card(root, put)
         self._build_browse_row(root, put)
         self.widgets = [self.plant_card, self.plants_picker]
@@ -39,10 +44,18 @@ class PlantsPage:
         paint(plant_inner, bg="CARD")
         plant_inner.pack(expand=True)
 
-        self.plant_photo = tk.Canvas(plant_inner, width=PHOTO_BOX, height=PHOTO_BOX,
+        # Left column: the photo with the "Set as my plant" button under it
+        # (the facts column is taller, so the button costs no height)
+        photo_column = tk.Frame(plant_inner)
+        paint(photo_column, bg="CARD")
+        photo_column.pack(side="left", padx=(0, 22))
+        self.plant_photo = tk.Canvas(photo_column, width=PHOTO_BOX, height=PHOTO_BOX,
                                      highlightthickness=0, bd=0)
         paint(self.plant_photo, bg="CARD")
-        self.plant_photo.pack(side="left", padx=(0, 22))
+        self.plant_photo.pack()
+        self.set_button = make_button(photo_column, "Set as my plant", self._on_set,
+                                      primary=True)
+        self.set_button.pack(pady=(10, 0))
 
         info = tk.Frame(plant_inner)
         paint(info, bg="CARD")
@@ -101,10 +114,32 @@ class PlantsPage:
         canvas.create_text(s / 2, s * .9, text="No photo yet",
                            font=get_font(9), fill=color("MUTED"))
 
+    def show(self):
+        """The page is being opened: start on the user's plant, or the
+        first plant if there isn't one."""
+        names = list_plants()
+        active = self.active_name()
+        self.viewed_plant = active if active else (names[0] if names else None)
+        self.refresh()
+
+    def _on_set(self):
+        if self.viewed_plant and self.viewed_plant != self.active_name():
+            self.set_active(self.viewed_plant)   # the app then calls refresh()
+
+    def _refresh_set_button(self):
+        if self.viewed_plant == self.active_name():
+            self.set_button.config(text="✔ Your plant", cursor="")
+            paint(self.set_button, bg="CARD", fg="MUTED", highlightbackground="CARD")
+        else:
+            self.set_button.config(text="Set as my plant", cursor="hand2")
+            paint(self.set_button, bg="ACCENT", fg="ON_ACCENT",
+                  highlightbackground="ACCENT")
+
     def refresh(self):
-        name = self.selected_name()
+        name = self.viewed_plant
         plant = get_plant(name) if name else None
         if plant is None:
+            self.set_button.pack_forget()
             self.plant_title.config(text="No plant selected")
             for label in self.fact_values.values():
                 label.config(text="–")
@@ -118,17 +153,21 @@ class PlantsPage:
         facts["water"].config(text=plant["water"] or "–")
         facts["soil"].config(text=plant["soil"] or "–")
         facts["ph"].config(text=fmt_range(plant["ph_min"], plant["ph_max"], "", 1))
+        self.set_button.pack(pady=(10, 0))
+        self._refresh_set_button()
         self.plant_title.config(text=plant["name"])
         self.plant_notes.config(text=plant["notes"] or "")
         self.picker_name.config(text=plant["name"])
         self.draw_photo(plant["name"])
 
     def step(self, step):
-        """Previous / next plant (wraps around); shared with the Monitor page."""
+        """Previous / next plant (wraps around). Only changes the viewed plant."""
         names = list_plants()
-        current_name = self.selected_name()
-        if current_name in names:
-            index = (names.index(current_name) + step) % len(names)
+        if not names:
+            return
+        if self.viewed_plant in names:
+            index = (names.index(self.viewed_plant) + step) % len(names)
         else:
             index = 0 if step > 0 else len(names) - 1
-        self.select_plant(names[index])
+        self.viewed_plant = names[index]
+        self.refresh()

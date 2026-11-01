@@ -1,12 +1,9 @@
-"""Monitor page: the reading cards, the plant-status card and the plant picker."""
+"""Monitor page: the reading cards and the plant-status card."""
 import tkinter as tk
 
-from plant_db import list_plants, get_plant, check_conditions
-from theme import NUMBER_SIZE, get_font, paint
-from widgets import make_label, make_row_text
-from zones import RowZone
-
-NO_PLANT = "Select a plant..."
+from plant_db import get_plant, check_conditions
+from theme import NUMBER_SIZE, paint
+from widgets import make_button, make_label
 
 # How the status card looks in each state: card color, then text colors
 STATUS_STYLES = {
@@ -33,15 +30,13 @@ def build_reading(card, title, color_role, unit):
 
 
 class MonitorPage:
-    def __init__(self, root, put, on_plant_chosen):
-        """put: the app's grid helper. on_plant_chosen(): called after the
-        user picks a plant in the dropdown."""
+    def __init__(self, root, put, on_change_plant):
+        """put: the app's grid helper. on_change_plant(): the "Change plant"
+        button was tapped (the app opens the Plants page)."""
         self._build_readings(root, put)
-        self._build_status(root, put)
-        self._build_picker(root, put, on_plant_chosen)
-        self.widgets = [self.temp_card, self.hum_card, self.status_card,
-                        self.picker]
-        self.zones = [self.picker]
+        self._build_status(root, put, on_change_plant)
+        self.widgets = [self.temp_card, self.hum_card, self.status_card]
+        self.zones = []
 
     # -- building -------------------------------------------------------
     def _build_readings(self, root, put):
@@ -58,7 +53,7 @@ class MonitorPage:
         self.temp_value = build_reading(self.temp_card, "TEMPERATURE", "TEMP", "°C")
         self.hum_value = build_reading(self.hum_card, "HUMIDITY", "HUM", "% RH")
 
-    def _build_status(self, root, put):
+    def _build_status(self, root, put, on_change_plant):
         # The main answer on this page: are conditions ideal?
         self.status_card = tk.Frame(root, highlightthickness=1)
         paint(self.status_card, bg="CARD", highlightbackground="BORDER")
@@ -74,38 +69,10 @@ class MonitorPage:
         self.state_plant = make_label(inner, "", 13, "MUTED", bg="CARD")
         self.state_detail = make_label(inner, "", 13, "MUTED", bg="CARD")
         self.state_detail.config(wraplength=680, justify="center")
-
-    def _build_picker(self, root, put, on_plant_chosen):
-        self.selected_plant = tk.StringVar(value=NO_PLANT)
-
-        self.picker = RowZone(root, pad_top=4, pad_bottom=2)
-        paint(self.picker, bg="BG")
-        put(self.picker, row=3, column=0, columnspan=2, sticky="ew")
-
-        menu_font = get_font(12)
-        make_row_text(self.picker, "PLANT:", 11, "MUTED", True, padx=(0, 10))
-        plant_menu = tk.OptionMenu(
-            self.picker, self.selected_plant, NO_PLANT, *list_plants(),
-            command=lambda _choice: on_plant_chosen()
-        )
-        plant_menu.config(font=menu_font, width=18, bd=0, relief="flat",
-                          highlightthickness=1)
-        paint(plant_menu, bg="CARD", fg="TEXT",
-              activebackground="CARD", activeforeground="TEXT",
-              highlightbackground="BORDER", highlightcolor="ACCENT")
-        plant_menu["menu"].config(font=menu_font)
-        paint(plant_menu["menu"], bg="CARD", fg="TEXT",
-              activebackground="ACCENT", activeforeground="ON_ACCENT")
-        self.picker.add_widget(plant_menu, extra_height=6)
-
-    # -- the selected plant ---------------------------------------------
-    def selected_name(self):
-        """The selected plant's name, or None."""
-        name = self.selected_plant.get()
-        return None if name == NO_PLANT else name
-
-    def select(self, name):
-        self.selected_plant.set(name or NO_PLANT)
+        # Plant selection is one tap away, on the Plants page. The button
+        # stays CARD-colored on the tinted ok / warn cards.
+        self.change_plant = make_button(inner, "Change plant ›", on_change_plant)
+        self.change_plant.grid(row=3, column=0, pady=(10, 0))
 
     # -- updating -------------------------------------------------------
     def show_reading(self, temperature, humidity):
@@ -127,15 +94,17 @@ class MonitorPage:
             else:
                 label.grid_remove()
 
-    def refresh(self, reading):
-        """Re-check the selected plant against the latest reading
-        ((temperature, humidity) or None)."""
-        name = self.selected_name()
-        plant = get_plant(name) if name else None
+    def refresh(self, plant_name, reading):
+        """Re-check the user's plant (a name or None) against the latest
+        reading ((temperature, humidity) or None). Returns the status:
+        "neutral", "ok" or "warn"."""
+        plant = get_plant(plant_name) if plant_name else None
+        self.change_plant.config(
+            text="Change plant ›" if plant else "Choose a plant ›")
 
         if plant is None:
             self.set_status("neutral", "Pick a plant", "to check if conditions are ideal")
-            return
+            return "neutral"
 
         ideal = (f"{plant['name']}  ·  ideal {plant['min_temp']:.0f}-"
                  f"{plant['max_temp']:.0f} °C, {plant['min_hum']:.0f}-"
@@ -143,11 +112,12 @@ class MonitorPage:
 
         if reading is None:
             self.set_status("neutral", "Waiting for first reading...", ideal)
-            return
+            return "neutral"
 
         ok, messages = check_conditions(plant, *reading)
         if ok:
             self.set_status("ok", "✔ Conditions are ideal", ideal, plant["notes"] or "")
-        else:
-            self.set_status("warn", "⚠ Conditions need attention", ideal,
-                            "\n".join(messages))
+            return "ok"
+        self.set_status("warn", "⚠ Conditions need attention", ideal,
+                        "\n".join(messages))
+        return "warn"

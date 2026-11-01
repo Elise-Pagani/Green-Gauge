@@ -23,7 +23,8 @@ from widgets import make_line, say
 from zones import TextZone, RowZone
 
 PAGE_TITLES = {"monitor": "Monitor", "plants": "Plants",
-               "assistant": "Assistant"}
+               "assistant": "Sprout"}
+TAB_WIDTH = 10   # characters: room for "⚠ Monitor", so the badge never shifts the tabs
 
 FRAME_MS = 50          # mic animation frame
 ANSWER_POLL_MS = 200   # how often to look for a finished LLM answer
@@ -38,15 +39,24 @@ class App:
         self.grid_options = {}       # widget -> its grid() options
         self.backdrops = {}          # theme name -> PhotoImage, built once
         self.backdrop_label = None
-        self.shown_reply = None      # (text, role) last drawn on the Assistant page
+        self.shown_view = None       # the assistant view last drawn on the Sprout page
+        # The user's plant. Only the Plants page button and saying Yes to
+        # Sprout's suggestion change it (set_active_plant).
+        self.active_plant = None
+        self.status_kind = "neutral"   # the Monitor status: neutral | ok | warn
 
         self.root = self._build_window()
         self._build_header()
-        self.monitor = MonitorPage(self.root, self.put, self.refresh_plant_status)
-        self.assistant_page = AssistantPage(self.root, self.put,
-                                            self.submit_command, self.on_mic_tap)
-        self.plants = PlantsPage(self.root, self.put, self.monitor.selected_name,
-                                 self.select_plant)
+        self.monitor = MonitorPage(self.root, self.put,
+                                   lambda: self.show_page("plants"))
+        self.assistant_page = AssistantPage(
+            self.root, self.put, self.submit_command, self.on_mic_tap,
+            on_yes=lambda: self.assistant.accept_suggestion(),
+            on_no=lambda: self.assistant.decline_suggestion(),
+            on_clear=lambda: self.assistant.clear(),
+            window_width=self.screen_size()[0])
+        self.plants = PlantsPage(self.root, self.put, lambda: self.active_plant,
+                                 self.set_active_plant)
         self._build_tabs()
         self._build_footer()
         self.zones = [self.header, *self.monitor.zones, *self.assistant_page.zones,
@@ -58,22 +68,23 @@ class App:
         self._build_settings_menu()
         # Typed questions and the mock mic share this one assistant state
         self.assistant = Assistant(
-            get_context=lambda: (self.monitor.selected_name(), self.reading),
-            on_plant=self.select_plant, on_change=self.render_assistant)
+            get_context=lambda: (self.active_plant, self.reading),
+            on_plant=self.set_active_plant, on_change=self.render_assistant)
 
     # ----------------------------------------------------------- layout
     # One grid, two columns. Rows (the same grid is shared by all pages):
     #   0  header zone: title + date/time                       (all pages)
     #   1  reading cards                                        (Monitor page)
-    #   2  status card | plant card | assistant text            (grows to fill)
-    #   3  plant picker | browse row | typed question box
-    #   4  page tabs                                            (all pages)
-    #   5  sensor status line                                   (all pages)
+    #   2  status card | plant card | Sprout's question + answer (grows to fill)
+    #   3  browse row | "Make Basil your plant?" row (only when it's needed)
+    #   4  typed question box                                   (Sprout page)
+    #   5  page tabs                                            (all pages)
+    #   6  sensor status line                                   (all pages)
     # The zones are canvases (see zones.py): their text is drawn directly on
     # the backdrop, so there are no boxes around it. Cards are solid on purpose.
     def _build_window(self):
         root = tk.Tk()
-        root.title("Climate Monitor")
+        root.title("Green Gauge")
         root.geometry("800x480")   # the size the professor's original code used
         if ON_PI:
             root.attributes("-fullscreen", True)
@@ -110,18 +121,19 @@ class App:
         self.header = TextZone(self.root, pad_top=10, pad_bottom=2)
         paint(self.header, bg="BG")
         self.header.grid(row=0, column=0, columnspan=2, sticky="ew")
-        make_line(self.header, "CLIMATE MONITOR", 24, "ACCENT", True)
+        make_line(self.header, "Green Gauge", 24, "ACCENT", True)
         self.date_line = make_line(self.header, "", 11, "MUTED")
 
     def _build_tabs(self):
         """Page tabs (always visible, easy to tap)."""
         self.nav = RowZone(self.root, pad_top=2, pad_bottom=2)
         paint(self.nav, bg="BG")
-        self.nav.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.nav.grid(row=5, column=0, columnspan=2, sticky="ew")
         self.tabs = {}
         for page_name, page_title in PAGE_TITLES.items():
             tab = tk.Label(self.nav, text=page_title, font=theme.get_font(12, True),
-                           padx=26, pady=7, highlightthickness=1, cursor="hand2")
+                           width=TAB_WIDTH, padx=16, pady=7, highlightthickness=1,
+                           cursor="hand2")
             tab.bind("<Button-1>", lambda _event, name=page_name: self.show_page(name))
             self.tabs[page_name] = tab
             self.nav.add_widget(tab, padx=(6, 6))
@@ -130,7 +142,7 @@ class App:
         """The sensor status line."""
         self.footer = TextZone(self.root, pad_top=2, pad_bottom=6)
         paint(self.footer, bg="BG")
-        self.footer.grid(row=5, column=0, columnspan=2, sticky="ew")
+        self.footer.grid(row=6, column=0, columnspan=2, sticky="ew")
         self.status = make_line(self.footer, "Connecting to sensor...", 10, "OK")
 
     # ------------------------------------------------------------ pages
@@ -149,12 +161,9 @@ class App:
                     widget.grid_forget()   # re-gridded later from grid_options
         self.page = name
         if name == "plants":
-            self.plants.refresh()
-        for tab_name, tab in self.tabs.items():
-            if tab_name == name:
-                paint(tab, bg="ACCENT", fg="ON_ACCENT", highlightbackground="ACCENT")
-            else:
-                paint(tab, bg="CARD", fg="TEXT", highlightbackground="BORDER")
+            self.plants.show()
+        self.assistant_page.set_shown(name == "assistant")
+        self.paint_tabs()
         self.nudge_zones()   # re-line-up the backdrop under each zone
         # On the Mac the boxes in the bottom row can show up late. Lining
         # everything up again a moment later gives it a nudge to draw them.
@@ -163,11 +172,29 @@ class App:
         if name == "assistant":
             self.assistant_page.focus()
 
-    def select_plant(self, name):
-        """Make a plant the selected one, everywhere."""
-        self.monitor.select(name)
+    def paint_tabs(self):
+        """Highlight the current page's tab. A warning on the Monitor page
+        puts a ⚠ on its tab (and, unless it's the current tab, warning
+        colors), so it's seen from the other pages too."""
+        warn = self.status_kind == "warn"
+        for tab_name, tab in self.tabs.items():
+            title = PAGE_TITLES[tab_name]
+            badge = warn and tab_name == "monitor"
+            tab.config(text=f"⚠ {title}" if badge else title)
+            if tab_name == self.page:
+                paint(tab, bg="ACCENT", fg="ON_ACCENT", highlightbackground="ACCENT")
+            elif badge:
+                paint(tab, bg="WARN_BG", fg="WARN", highlightbackground="WARN")
+            else:
+                paint(tab, bg="CARD", fg="TEXT", highlightbackground="BORDER")
+
+    def set_active_plant(self, name):
+        """Make a plant the user's plant, everywhere. Only the Plants page
+        button and the Yes on Sprout's suggestion call this."""
+        self.active_plant = name
         self.refresh_plant_status()
         self.plants.refresh()
+        self.assistant.plant_changed(name)   # earlier questions were about another plant
 
     # --------------------------------------------------------- backdrop
     # The picture behind everything: a gradient for Light and Dark, a blurred
@@ -276,6 +303,7 @@ class App:
     def on_size_change(self):
         theme.set_size(self.size_var.get())
         theme.apply_scale()
+        self.assistant_page.update_wrap()
         self.root.update_idletasks()
         for zone in self.zones:
             zone.relayout()
@@ -293,13 +321,14 @@ class App:
         self.assistant.tap_mic()
 
     def render_assistant(self):
-        """Draw the assistant's state: the mic and the reply line."""
+        """Draw the assistant's state: the mic, and (when they changed) the
+        question, the answer and the suggestion row."""
         view = self.assistant.view()
         self.assistant_page.mic.draw(view.mode, view.frame)
-        reply = (view.reply, view.reply_role)
-        if reply != self.shown_reply:
-            self.shown_reply = reply
-            self.assistant_page.show_reply(*reply)
+        text_view = view._replace(mode="", frame=0)   # the mic redraws alone
+        if text_view != self.shown_view:
+            self.shown_view = text_view
+            self.assistant_page.render(view)
 
     def draw_mic(self):
         view = self.assistant.view()
@@ -323,7 +352,10 @@ class App:
 
     # ---------------------------------------------- readings and timers
     def refresh_plant_status(self):
-        self.monitor.refresh(self.reading)
+        kind = self.monitor.refresh(self.active_plant, self.reading)
+        if kind != self.status_kind:
+            self.status_kind = kind
+            self.paint_tabs()
 
     def update_datetime(self):
         now = datetime.now()

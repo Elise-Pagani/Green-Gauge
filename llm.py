@@ -1,7 +1,8 @@
 """Talks to the local Ollama server (fully offline once the model is pulled).
 
-ask() never raises: if Ollama isn't running or is too slow, it returns a
-short, readable error message so the GUI can just display the result.
+ask() never raises: it returns (ok, text). If Ollama isn't running or is too
+slow, ok is False and text is a short, readable error message, so the GUI
+can just display it (and knows not to remember it as an answer).
 """
 import json
 import socket
@@ -15,7 +16,7 @@ MODEL = "llama3.2:3b"   # if the Pi is too slow, try "llama3.2:1b"
 TIMEOUT_SECONDS = 180   # first request is slow while the model loads
 
 
-def build_system_prompt(selected_plant=None, reading=None):
+def build_system_prompt(active_plant=None, reading=None):
     """Instructions + the plant table, so answers come from our database."""
     lines = []
     for name in list_plants():
@@ -27,7 +28,7 @@ def build_system_prompt(selected_plant=None, reading=None):
     table = "\n".join(lines)
 
     prompt = (
-        "You are the assistant for a greenhouse climate monitor. "
+        "You are Sprout, the assistant in Green Gauge, a greenhouse climate monitor. "
         "Answer in at most 2 short sentences, in plain text with no markdown. "
         "For the plants in the reference table, use ONLY the ranges in the table. "
         "If a plant is not in the table, say it isn't in your database, then give "
@@ -35,8 +36,8 @@ def build_system_prompt(selected_plant=None, reading=None):
         "Temperatures are in °C and humidity is % relative humidity (RH).\n\n"
         f"Reference table (ideal ranges):\n{table}\n"
     )
-    if selected_plant:
-        prompt += f"\nThe user is currently growing: {selected_plant}."
+    if active_plant:
+        prompt += f"\nThe user is currently growing: {active_plant}."
     if reading:
         prompt += (
             f"\nCurrent greenhouse reading: {reading[0]:.1f} °C, "
@@ -45,17 +46,30 @@ def build_system_prompt(selected_plant=None, reading=None):
     return prompt
 
 
-def ask(question, selected_plant=None, reading=None):
-    """Send a question to the model and return its answer as a string."""
+def build_messages(question, active_plant=None, reading=None, history=()):
+    """System message, then the earlier (question, answer) pairs in order,
+    then the new question."""
+    messages = [{"role": "system",
+                 "content": build_system_prompt(active_plant, reading)}]
+    for earlier_question, earlier_answer in history:
+        messages.append({"role": "user", "content": earlier_question})
+        messages.append({"role": "assistant", "content": earlier_answer})
+    messages.append({"role": "user", "content": question})
+    return messages
+
+
+def ask(question, active_plant=None, reading=None, history=()):
+    """Send a question to the model. Returns (ok, text): the answer, or
+    ok=False and an error message.
+
+    history: earlier (question, answer) pairs, oldest first, so follow-up
+    questions like "And what temperature?" make sense."""
     body = {
         "model": MODEL,
         "stream": False,
         "keep_alive": "10m",  # keep the model loaded between questions
         "options": {"temperature": 0.3, "num_predict": 120},
-        "messages": [
-            {"role": "system", "content": build_system_prompt(selected_plant, reading)},
-            {"role": "user", "content": question},
-        ],
+        "messages": build_messages(question, active_plant, reading, history),
     }
     request = urllib.request.Request(
         OLLAMA_URL,
@@ -66,9 +80,12 @@ def ask(question, selected_plant=None, reading=None):
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             data = json.load(response)
-        return data["message"]["content"].strip() or "I didn't get an answer. Try rephrasing."
+        answer = data["message"]["content"].strip()
+        if not answer:
+            return False, "I didn't get an answer. Try rephrasing."
+        return True, answer
     except (socket.timeout, TimeoutError):
-        return "That took too long. The model may still be loading; try again."
+        return False, "That took too long. The model may still be loading; try again."
     except urllib.error.HTTPError as error:
         # Ollama IS running but refused the request. HTTPError is a kind of
         # URLError, so it has to be checked first or it would be reported
@@ -78,17 +95,23 @@ def ask(question, selected_plant=None, reading=None):
         except (ValueError, AttributeError):
             detail = ""
         if error.code == 404 or "not found" in detail.lower():
-            return (f"Ollama is running, but the model {MODEL} isn't downloaded "
-                    f"yet. In a terminal, run: ollama pull {MODEL}")
-        return f"Ollama returned an error ({error.code}). {detail}".strip()
+            return False, (f"Ollama is running, but the model {MODEL} isn't "
+                           f"downloaded yet. In a terminal, run: ollama pull {MODEL}")
+        return False, f"Ollama returned an error ({error.code}). {detail}".strip()
     except urllib.error.URLError:
-        return "Can't reach Ollama. Is it running? (open the Ollama app, or run: ollama serve)"
-    except (KeyError, ValueError):
-        return "Got an unexpected reply from Ollama."
+        return False, ("Can't reach Ollama. Is it running? "
+                       "(open the Ollama app, or run: ollama serve)")
+    except (KeyError, TypeError, AttributeError, ValueError):
+        return False, "Got an unexpected reply from Ollama."
 
 
 if __name__ == "__main__":
     # Quick test: python3 llm.py
     from plant_db import init_db
     init_db()
-    print(ask("What humidity does basil like?", "Basil", (24.0, 60.0)))
+    question = "What humidity does basil like?"
+    ok, answer = ask(question, "Basil", (24.0, 60.0))
+    print(ok, answer)
+    if ok:   # a follow-up only makes sense with the first answer as context
+        print(ask("And what temperature?", "Basil", (24.0, 60.0),
+                  history=[(question, answer)]))
