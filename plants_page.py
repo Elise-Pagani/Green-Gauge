@@ -1,7 +1,8 @@
 """Plants page: one plant's full guide, browsed with the < > arrows.
 
 Browsing only changes the plant being VIEWED here. The user's plant (the
-one the Monitor page checks) changes only with the "Set as my plant" button.
+one the Monitor page checks) changes only with the "Set as my plant" button,
+which sits between the < and > arrows.
 """
 import tkinter as tk
 
@@ -17,6 +18,7 @@ FACTS = [("temp", "Temperature"), ("hum", "Humidity"), ("water", "Watering"),
          ("soil", "Soil"), ("ph", "Soil pH")]
 NOTES_CHARACTERS = 44   # the care note wraps at about this many characters
 NOTES_MAX_PX = 480      # ...but stays beside the photo
+SET_BUTTON_CHARS = 16   # fixed width so the arrows don't shift when the text changes
 
 
 class PlantsPage:
@@ -41,8 +43,7 @@ class PlantsPage:
         paint(plant_inner, bg="CARD")
         plant_inner.pack(expand=True)
 
-        # Left column: the photo with the "Set as my plant" button under it
-        # (the facts column is taller, so the button costs no height)
+        # Left column: just the photo
         photo_column = tk.Frame(plant_inner)
         paint(photo_column, bg="CARD")
         photo_column.pack(side="left", padx=(0, 22))
@@ -50,10 +51,8 @@ class PlantsPage:
                                      highlightthickness=0, bd=0)
         paint(self.plant_photo, bg="CARD")
         self.plant_photo.pack()
-        self.set_button = make_button(photo_column, "Set as my plant", self._on_set,
-                                      primary=True)
-        self.set_button.pack(pady=(10, 0))
 
+        # Right column: title, facts, care note
         info = tk.Frame(plant_inner)
         paint(info, bg="CARD")
         info.pack(side="left")
@@ -71,17 +70,19 @@ class PlantsPage:
         self.update_wrap()
 
     def _build_browse_row(self, root, put):
+        """The row under the card:  <  [Set as my plant]  >"""
         self.plants_picker = RowZone(root, pad_top=4, pad_bottom=2)
         paint(self.plants_picker, bg="BG")
         put(self.plants_picker, show=False, row=3, column=0, columnspan=2,
             sticky="ew")
 
+        # Every widget goes in through add_widget so the zone lays them out
+        # (and handles taps) in this order: left arrow, button, right arrow.
         self.plants_picker.add_widget(self._make_arrow("<", -1), padx=(0, 10))
-        self.picker_name = tk.Label(self.plants_picker, text="Browse plants",
-                                    width=14, font=get_font("heading"), bd=0,
-                                    pady=10, highlightthickness=1)
-        paint(self.picker_name, bg="CARD", fg="TEXT", highlightbackground="BORDER")
-        self.plants_picker.add_widget(self.picker_name)
+        self.set_button = make_button(self.plants_picker, "Set as my plant",
+                                      self._on_set, primary=True)
+        self.set_button.config(width=SET_BUTTON_CHARS)
+        self.plants_picker.add_widget(self.set_button, padx=(0, 0))
         self.plants_picker.add_widget(self._make_arrow(">", 1), padx=(10, 0))
 
     def _make_arrow(self, text, step):
@@ -131,7 +132,8 @@ class PlantsPage:
             self.set_active(self.viewed_plant)   # the app then calls refresh()
 
     def _refresh_set_button(self):
-        if self.viewed_plant == self.active_name():
+        is_active = bool(self.viewed_plant) and self.viewed_plant == self.active_name()
+        if is_active:
             self.set_button.config(text="✔ Your plant", cursor="")
             paint(self.set_button, bg="CARD", fg="MUTED", highlightbackground="CARD")
         else:
@@ -143,12 +145,11 @@ class PlantsPage:
         name = self.viewed_plant
         plant = get_plant(name) if name else None
         if plant is None:
-            self.set_button.pack_forget()
             self.plant_title.config(text="No plant selected")
             for label in self.fact_values.values():
                 label.config(text=units.DASH)
             self.plant_notes.config(text="Use the arrows below to browse the plants.")
-            self.picker_name.config(text="Browse plants")
+            self._refresh_set_button()
             self.draw_photo(None)
             return
         facts = self.fact_values
@@ -158,11 +159,9 @@ class PlantsPage:
         facts["water"].config(text=plant["water"] or units.DASH)
         facts["soil"].config(text=plant["soil"] or units.DASH)
         facts["ph"].config(text=units.ph_range(plant["ph_min"], plant["ph_max"]))
-        self.set_button.pack(pady=(10, 0))
         self._refresh_set_button()
         self.plant_title.config(text=plant["name"])
         self.plant_notes.config(text=plant["notes"] or "")
-        self.picker_name.config(text=plant["name"])
         self.draw_photo(plant["name"])
 
     def step(self, step):
